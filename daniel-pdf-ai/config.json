@@ -1,5 +1,7 @@
 {
     "S3_PDF_BUCKET": "daniel-ai-pdf-bucket", 
     "AWS_REGION": "us-east-1", 
-    "DYNAMODB_PDF_METADATA_TABLE": "DanielPdfMetadata" 
+    "DYNAMODB_PDF_METADATA_TABLE": "DanielPdfMetadata",
+    "BEDROCK_EMBEDDING_MODEL": "amazon.titan-embed-text-v1",
+    "BEDROCK_CHAT_MODEL": "amazon.titan-text-express-v1"
   }

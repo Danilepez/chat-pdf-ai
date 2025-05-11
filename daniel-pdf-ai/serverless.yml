@@ -10,6 +10,9 @@ provider:
   environment:
     BUCKET_NAME: ${file(config.json):S3_PDF_BUCKET}
     TABLE_NAME: ${file(config.json):DYNAMODB_PDF_METADATA_TABLE}
+    EMBEDDING_MODEL: ${file(config.json):BEDROCK_EMBEDDING_MODEL} 
+    CHAT_MODEL: ${file(config.json):BEDROCK_CHAT_MODEL}
+    BEDROCK_REGION: ${file(config.json):AWS_REGION}
   iamRoleStatements: 
     - Effect: "Allow"
       Action:
@@ -19,6 +22,15 @@ provider:
       Resource:
         - "arn:aws:s3:::${self:provider.environment.BUCKET_NAME}/*"
         - "arn:aws:s3:::${self:provider.environment.BUCKET_NAME}" 
+    - Effect: Allow
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:Query
+      Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TABLE_NAME}
+    - Effect: Allow
+      Action:
+        - bedrock:InvokeModel
+      Resource: "arn:aws:bedrock:${self:provider.region}::foundation-model/*"
 
 package:
   individually: true
@@ -54,6 +66,25 @@ functions:
           path: /list-pdfs
           method: get
 
+  processPdf:
+    handler: handler.processPdf
+    layers:
+      - {Ref: DanielDependenciesLambdaLayer}
+    events:
+      - s3:
+          bucket: ${self:provider.environment.BUCKET_NAME}
+          event: s3:ObjectCreated:*
+          existing: true
+  
+  queryPdf:
+    handler: handler.queryPdf
+    layers:
+      - {Ref: DanielDependenciesLambdaLayer}
+    events:
+      - httpApi:
+          path: /query-pdf
+          method: post
+
 layers:
   danielDependencies:
     name: daniel-dependencies
@@ -87,6 +118,22 @@ resources:
                 - GET
                 - HEAD
               MaxAge: 3000
+
+    EmbeddingsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLE_NAME}
+        AttributeDefinitions:
+          - AttributeName: DocumentId
+            AttributeType: S
+          - AttributeName: FragmentId
+            AttributeType: N
+        KeySchema:
+          - AttributeName: DocumentId
+            KeyType: HASH
+          - AttributeName: FragmentId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
 
     # PdfMetadataTable: # Optional for now, but good to plan
     #   Type: AWS::DynamoDB::Table
