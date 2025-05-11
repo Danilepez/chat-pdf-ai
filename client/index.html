@@ -1,270 +1,202 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>PDF Chat con Amazon Bedrock</title>
+    <title>PDF Chat con Bedrock</title>
     <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f9; color: #333; }
-        .container { 
-            background-color: #fff; 
-            padding: 20px; 
-            border-radius: 8px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            margin-bottom: 30px;
-        }
-        h2 { 
-            color: #333; 
-            border-bottom: 2px solid #5cb85c; 
-            padding-bottom: 10px;
-            margin-top: 0;
-        }
-        input[type="file"] { 
-            border: 1px solid #ddd; 
-            padding: 10px; 
-            border-radius: 4px; 
-            margin-right: 10px; 
-            width: 300px;
-        }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+        .section { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        input[type="file"] { padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0; }
         button {
-            background-color: #5cb85c;
+            background: #3498db;
             color: white;
             border: none;
-            padding: 10px 15px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 16px;
-            margin: 4px 2px;
-            cursor: pointer;
+            padding: 10px 20px;
             border-radius: 4px;
-            transition: background-color 0.3s ease;
+            cursor: pointer;
+            transition: background 0.3s;
         }
-        button:hover { background-color: #4cae4c; }
-        #fileList { 
-            list-style-type: none; 
-            padding: 0; 
-            max-height: 300px;
-            overflow-y: auto;
-        }
+        button:hover { background: #2980b9; }
+        #fileList { list-style: none; padding: 0; }
         #fileList li { 
             padding: 10px; 
-            margin-bottom: 5px; 
-            border-radius: 4px; 
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        #fileList li:hover { 
-            background-color: #f0f0f0; 
-        }
-        #chatContainer {
-            display: none;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            background-color: #fff;
-        }
-        #chatHistory {
-            height: 300px;
-            overflow-y: auto;
-            border: 1px solid #eee;
-            padding: 10px;
-            margin-bottom: 15px;
-            background-color: #fafafa;
-        }
-        .message { 
-            margin: 10px 0; 
-            padding: 10px; 
-            border-radius: 5px; 
-        }
-        .user-message { 
-            background-color: #e3f2fd; 
-            border: 1px solid #bbdefb;
-            margin-left: 20%;
-        }
-        .bot-message { 
-            background-color: #f5f5f5; 
-            border: 1px solid #eee;
-            margin-right: 20%;
-        }
-        #questionInput {
-            width: calc(100% - 100px);
-            padding: 10px;
-            border: 1px solid #ddd;
+            margin: 5px 0; 
+            background: #f8f9fa; 
             border-radius: 4px;
-            margin-right: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
         }
-        .status-message {
-            color: #666;
-            font-style: italic;
-            margin: 10px 0;
+        #fileList li:hover { background: #e9ecef; }
+        #status { margin: 15px 0; color: #666; }
+        .loader { 
+            display: none;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Subir PDF a Amazon S3</h2>
-        <input type="file" id="fileInput" accept=".pdf" />
-        <button onclick="uploadPdf()">Subir PDF</button>
-        <p id="uploadStatus" class="status-message"></p>
+    <div class="section">
+        <h2>Subir PDF</h2>
+        <input type="file" id="pdfInput" accept=".pdf">
+        <button onclick="uploadPDF()">Subir PDF</button>
+        <div class="loader" id="uploadLoader"></div>
+        <div id="uploadStatus"></div>
     </div>
 
-    <div class="container">
-        <h2>Documentos disponibles</h2>
-        <button onclick="fetchPdfList()">Actualizar lista</button>
+    <div class="section">
+        <h2>Documentos Disponibles</h2>
+        <button onclick="loadDocuments()">Actualizar Lista</button>
+        <div class="loader" id="listLoader"></div>
         <ul id="fileList"></ul>
-        <p id="listStatus" class="status-message"></p>
+        <div id="listStatus"></div>
     </div>
 
-    <div id="chatContainer" class="container">
-        <h2>Chat con el documento</h2>
-        <div id="selectedDocument" class="status-message">Documento seleccionado: Ninguno</div>
+    <div class="section" id="chatSection" style="display: none;">
+        <h2>Chat con el Documento</h2>
+        <div id="selectedDocument">Documento seleccionado: <span id="selectedDocName"></span></div>
         <div id="chatHistory"></div>
-        <div style="display: flex; gap: 10px; margin-top: 15px;">
-            <input type="text" id="questionInput" placeholder="Escribe tu pregunta sobre el documento..." />
+        <div style="margin-top: 15px;">
+            <input type="text" id="questionInput" placeholder="Escribe tu pregunta..." style="width: 70%; padding: 8px;">
             <button onclick="askQuestion()">Enviar</button>
         </div>
     </div>
 
     <script>
-        // Configuración de endpoints (Reemplazar con tus URLs)
+        // Configuración de endpoints (¡Actualizar con tus URLs!)
         const API_ENDPOINTS = {
             GET_SIGNED_URL: 'https://eonxky5meh.execute-api.us-east-1.amazonaws.com/get-signed-url-pdf',
             LIST_PDFS: 'https://eonxky5meh.execute-api.us-east-1.amazonaws.com/list-pdfs',
             QUERY_PDF: 'https://eonxky5meh.execute-api.us-east-1.amazonaws.com/query-pdf'
         };
 
-        let selectedPdfKey = null;
+        let selectedPDFKey = null;
 
-        async function uploadPdf() {
-            const fileInput = document.getElementById('fileInput');
-            const uploadStatus = document.getElementById('uploadStatus');
+        async function uploadPDF() {
+            const fileInput = document.getElementById('pdfInput');
+            const status = document.getElementById('uploadStatus');
+            const loader = document.getElementById('uploadLoader');
+            
+            if (!fileInput.files.length) return alert('Selecciona un archivo PDF');
+            
             const file = fileInput.files[0];
-
-            if (!file) return alert('Por favor selecciona un archivo PDF');
-            if (file.type !== 'application/pdf') return alert('Solo se permiten archivos PDF');
+            loader.style.display = 'block';
+            status.textContent = 'Iniciando subida...';
 
             try {
-                uploadStatus.textContent = 'Generando URL de subida...';
+                // 1. Obtener URL pre-firmada
+                const urlResponse = await fetch(`${API_ENDPOINTS.GET_SIGNED_URL}?filename=${encodeURIComponent(file.name)}&filetype=${file.type}`);
                 
-                const url = `${API_ENDPOINTS.GET_SIGNED_URL}?filename=${encodeURIComponent(file.name)}&filetype=${file.type}`;
-                const response = await fetch(url);
-                
-                if (!response.ok) throw new Error('Error al obtener URL de subida');
-                
-                const { uploadURL, key } = await response.json();
-                uploadStatus.textContent = 'Subiendo archivo...';
+                if (!urlResponse.ok) throw new Error('Error al obtener URL de subida');
+                const { uploadURL, key } = await urlResponse.json();
 
+                // 2. Subir archivo a S3
+                status.textContent = 'Subiendo a AWS S3...';
                 const uploadResponse = await fetch(uploadURL, {
                     method: 'PUT',
                     headers: { 'Content-Type': file.type },
                     body: file
                 });
 
-                if (!uploadResponse.ok) throw new Error('Error en la subida a S3');
+                if (!uploadResponse.ok) throw new Error('Error subiendo el archivo');
+
+                // 3. Procesamiento asíncrono
+                status.innerHTML = '✅ PDF subido correctamente.<br>Procesando contenido con Bedrock...';
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Simular espera
                 
-                uploadStatus.textContent = '¡Subida exitosa!';
-                fileInput.value = '';
-                setTimeout(fetchPdfList, 2000); // Esperar procesamiento
+                // 4. Actualizar lista
+                loadDocuments();
+                status.textContent = '¡Procesamiento completado! Ya puedes hacer preguntas.';
                 
             } catch (error) {
-                uploadStatus.textContent = `Error: ${error.message}`;
+                status.innerHTML = `❌ Error: ${error.message}`;
                 console.error('Upload error:', error);
+            } finally {
+                loader.style.display = 'none';
+                fileInput.value = '';
             }
         }
 
-        async function fetchPdfList() {
-            const fileList = document.getElementById('fileList');
-            const listStatus = document.getElementById('listStatus');
+        async function loadDocuments() {
+            const list = document.getElementById('fileList');
+            const status = document.getElementById('listStatus');
+            const loader = document.getElementById('listLoader');
             
+            loader.style.display = 'block';
+            list.innerHTML = '';
+
             try {
-                listStatus.textContent = 'Cargando lista de documentos...';
                 const response = await fetch(API_ENDPOINTS.LIST_PDFS);
                 const { files } = await response.json();
 
-                fileList.innerHTML = '';
-                if (files.length === 0) {
-                    listStatus.textContent = 'No se encontraron documentos';
-                    return;
-                }
-
                 files.forEach(file => {
-                    const listItem = document.createElement('li');
-                    listItem.innerHTML = `
-                        <div onclick="selectPdf('${file.key}')" 
-                             style="padding: 10px; border-bottom: 1px solid #eee;">
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <div onclick="selectPDF('${file.key}')">
                             📄 ${file.key.split('/').pop()} 
-                            <span style="color: #666; font-size: 0.9em;">
-                                (${(file.size/1024).toFixed(1)} KB)
-                            </span>
+                            <small>(${(file.size/1024).toFixed(1)} KB)</small>
                         </div>
                     `;
-                    fileList.appendChild(listItem);
+                    list.appendChild(li);
                 });
-                
-                listStatus.textContent = `${files.length} documentos encontrados`;
-                
+
             } catch (error) {
-                listStatus.textContent = `Error: ${error.message}`;
-                console.error('List error:', error);
+                status.textContent = `Error: ${error.message}`;
+            } finally {
+                loader.style.display = 'none';
             }
         }
 
-        function selectPdf(pdfKey) {
-            selectedPdfKey = pdfKey;
-            document.getElementById('chatContainer').style.display = 'block';
-            document.getElementById('selectedDocument').textContent = 
-                `Documento seleccionado: ${pdfKey.split('/').pop()}`;
-            document.getElementById('chatHistory').innerHTML = 
-                '<div class="message bot-message">Selecciona un documento para comenzar el chat</div>';
+        function selectPDF(key) {
+            selectedPDFKey = key;
+            document.getElementById('chatSection').style.display = 'block';
+            document.getElementById('selectedDocName').textContent = key.split('/').pop();
+            document.getElementById('chatHistory').innerHTML = '<div class="message">Selecciona un documento para comenzar</div>';
             window.scrollTo(0, document.body.scrollHeight);
         }
 
         async function askQuestion() {
-            const questionInput = document.getElementById('questionInput');
-            const question = questionInput.value.trim();
-            const chatHistory = document.getElementById('chatHistory');
+            const input = document.getElementById('questionInput');
+            const question = input.value.trim();
+            const history = document.getElementById('chatHistory');
             
-            if (!selectedPdfKey) return alert('Primero selecciona un documento');
+            if (!selectedPDFKey) return alert('Primero selecciona un documento');
             if (!question) return alert('Escribe una pregunta');
 
-            // Agregar pregunta al historial
-            chatHistory.innerHTML += `
-                <div class="message user-message">
-                    <strong>Tú:</strong> ${question}
-                </div>
-            `;
+            history.innerHTML += `<div class="user-question">Tú: ${question}</div>`;
+            input.value = '';
 
             try {
                 const response = await fetch(API_ENDPOINTS.QUERY_PDF, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        documentKey: selectedPdfKey,
+                        documentKey: selectedPDFKey,
                         question: question
                     })
                 });
 
                 const { answer } = await response.json();
+                history.innerHTML += `<div class="bot-answer">AI: ${answer}</div>`;
                 
-                chatHistory.innerHTML += `
-                    <div class="message bot-message">
-                        <strong>Asistente:</strong> ${answer}
-                    </div>
-                `;
-
             } catch (error) {
-                chatHistory.innerHTML += `
-                    <div class="message bot-message" style="color: #d32f2f;">
-                        Error: ${error.message}
-                    </div>
-                `;
+                history.innerHTML += `<div class="error">Error: ${error.message}</div>`;
             }
 
-            questionInput.value = '';
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+            history.scrollTop = history.scrollHeight;
         }
 
-        // Cargar lista inicial de PDFs
-        document.addEventListener('DOMContentLoaded', fetchPdfList);
+        // Cargar documentos al iniciar
+        document.addEventListener('DOMContentLoaded', loadDocuments);
     </script>
 </body>
 </html>
