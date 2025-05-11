@@ -3,7 +3,7 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 const { DynamoDBDocumentClient, PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { parse } = require('pdf-parse');
+const pdf = require('pdf-parse'); 
 
 // Configurar clientes AWS SDK v3
 const s3 = new S3Client({ region: process.env.AWS_REGION });
@@ -100,17 +100,30 @@ module.exports.listPdfs = async () => {
 
 module.exports.processPdf = async (event) => {
   try {
+    console.log('Iniciando procesamiento de PDF...');
+    
     for (const record of event.Records) {
       const { key } = record.s3.object;
+      console.log(`Procesando archivo: ${key}`);
       
+      // 1. Obtener el PDF de S3
       const { Body } = await s3.send(new GetObjectCommand({
         Bucket: process.env.BUCKET_NAME,
         Key: key
       }));
-
-      const { text } = await parse(Body);
+      
+      // 2. Convertir el stream a Buffer
+      const data = await Body.transformToByteArray();
+      const pdfBuffer = Buffer.from(data);
+      
+      // 3. Parsear el PDF
+      const { text } = await pdf(pdfBuffer); // Uso correcto de pdf-parse
+      console.log(`PDF parseado exitosamente. Longitud del texto: ${text.length} caracteres`);
+      
+      // 4. Dividir en chunks y guardar embeddings
       const chunks = chunkText(text);
-
+      console.log(`Generando embeddings para ${chunks.length} fragmentos...`);
+      
       for (const [index, chunk] of chunks.entries()) {
         const embedding = await getEmbedding(chunk);
         
@@ -125,9 +138,17 @@ module.exports.processPdf = async (event) => {
           }
         }));
       }
+      
+      console.log(`Procesamiento completado para: ${key}`);
     }
+    
   } catch (error) {
-    console.error('Error procesando PDF:', error);
+    console.error('Error procesando PDF:', {
+      message: error.message,
+      stack: error.stack,
+      rawError: error
+    });
+    throw error; 
   }
 };
 
