@@ -1,0 +1,5 @@
+{
+    "S3_PDF_BUCKET": "daniel-ai-pdf-bucket", 
+    "AWS_REGION": "us-east-1", 
+    "DYNAMODB_PDF_METADATA_TABLE": "DanielPdfMetadata" 
+  }

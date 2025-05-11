@@ -1,0 +1,101 @@
+# "org" ensures this Service is used with the correct Serverless Framework Access Key.
+org: upb2025
+# "service" is the name of this project. This will also be added to your AWS resource names.
+service: daniel-pdf-ai
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${file(config.json):AWS_REGION}
+  environment:
+    BUCKET_NAME: ${file(config.json):S3_PDF_BUCKET}
+    TABLE_NAME: ${file(config.json):DYNAMODB_PDF_METADATA_TABLE}
+  iamRoleStatements: 
+    - Effect: "Allow"
+      Action:
+        - "s3:PutObject"
+        - "s3:GetObject" 
+        - "s3:ListBucket"
+      Resource:
+        - "arn:aws:s3:::${self:provider.environment.BUCKET_NAME}/*"
+        - "arn:aws:s3:::${self:provider.environment.BUCKET_NAME}" 
+
+package:
+  individually: true
+  exclude:
+    - .git/**
+    - .vscode/**
+    - node_modules/** 
+    - client/**
+    - serverless.yml
+    - config.json
+    - package.json
+    - package-lock.json
+    - nodejs/**
+    - layer_content.zip
+    - README.md
+
+
+functions:
+  getSignedUploadUrlPdf:
+    handler: handler.getSignedUploadUrlPdf 
+    layers:
+      - {Ref: DanielDependenciesLambdaLayer}
+    events:
+      - httpApi:
+          path: /get-signed-url-pdf
+          method: get
+  listPdfs:
+    handler: handler.listPdfs 
+    layers:
+      - {Ref: DanielDependenciesLambdaLayer}
+    events:
+      - httpApi:
+          path: /list-pdfs
+          method: get
+
+layers:
+  danielDependencies:
+    name: daniel-dependencies
+    compatibleRuntimes:
+      - nodejs20.x
+    package:
+      artifact: layer_content.zip
+
+
+    # - Effect: "Allow"
+    #   Action:
+    #     - "dynamodb:PutItem"
+    #     - "dynamodb:GetItem"
+    #     - "dynamodb:Scan" # etc.
+    #   Resource: "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TABLE_NAME}"
+
+resources:
+  Resources:
+    UploadPdfBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.BUCKET_NAME}
+        CorsConfiguration: 
+          CorsRules:
+            - AllowedOrigins:
+                - '*' 
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - PUT
+                - GET
+                - HEAD
+              MaxAge: 3000
+
+    # PdfMetadataTable: # Optional for now, but good to plan
+    #   Type: AWS::DynamoDB::Table
+    #   Properties:
+    #     TableName: ${self:provider.environment.TABLE_NAME}
+    #     AttributeDefinitions:
+    #       - AttributeName: pdfId # e.g., the S3 key or a UUID
+    #         AttributeType: S
+    #     KeySchema:
+    #       - AttributeName: pdfId
+    #         KeyType: HASH
+    #     BillingMode: PAY_PER_REQUEST

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Manager</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f9; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        h2 { color: #333; border-bottom: 2px solid #5cb85c; padding-bottom: 10px; }
+        input[type="file"] { border: 1px solid #ddd; padding: 10px; border-radius: 4px; margin-right: 10px; }
+        button {
+            background-color: #5cb85c;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover { background-color: #4cae4c; }
+        #fileList { list-style-type: none; padding: 0; }
+        #fileList li { background-color: #e9e9e9; padding: 8px; margin-bottom: 5px; border-radius: 4px; font-size: 0.9em; }
+        #uploadStatus, #listStatus { margin-top: 10px; font-style: italic; color: #555; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Upload PDF to S3</h2>
+        <input type="file" id="fileInput" accept=".pdf" />
+        <button onclick="uploadPdf()">Upload PDF</button>
+        <p id="uploadStatus"></p>
+    </div>
+
+    <div class="container">
+        <h2>Uploaded PDFs</h2>
+        <button onclick="fetchPdfList()">Refresh List</button>
+        <ul id="fileList"></ul>
+        <p id="listStatus"></p>
+    </div>
+
+    <script>
+        // **********************************************************************
+        // IMPORTANTE: Reemplaza estas URLs con tus endpoints desplegados:
+        // **********************************************************************
+        const GET_SIGNED_URL_API = 'https://eonxky5meh.execute-api.us-east-1.amazonaws.com/get-signed-url-pdf';
+        const LIST_PDFS_API = 'https://eonxky5meh.execute-api.us-east-1.amazonaws.com/list-pdfs';
+        // **********************************************************************
+
+        async function uploadPdf() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Select a PDF file first.');
+                return;
+            }
+
+            if (file.type !== 'application/pdf') {
+                alert('Please select a PDF file.');
+                return;
+            }
+
+            uploadStatus.textContent = 'Requesting upload URL...';
+
+            try {
+                // Añadimos un timestamp para evitar problemas de caché del navegador si es necesario
+                const signedUrlEndpoint = `${GET_SIGNED_URL_API}?filename=${encodeURIComponent(file.name)}&filetype=${encodeURIComponent(file.type)}&t=${new Date().getTime()}`;
+                const res = await fetch(signedUrlEndpoint);
+
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({ message: 'Failed to parse error response from get-signed-url endpoint.' }));
+                    throw new Error(`Failed to get upload URL: ${errorData.message || res.statusText}`);
+                }
+                const { uploadURL, key } = await res.json();
+
+                if (!uploadURL) {
+                    throw new Error('Received empty uploadURL from the API.');
+                }
+
+                uploadStatus.textContent = 'Uploading...';
+
+                const uploadRes = await fetch(uploadURL, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': file.type },
+                    body: file
+                });
+
+                if (uploadRes.ok) {
+                    uploadStatus.textContent = `Upload successful! File key: ${key}`;
+                    alert('Upload successful!');
+                    fileInput.value = ''; // Clear the input
+                    fetchPdfList(); // Refresh the list
+                } else {
+                    // Attempt to get more specific error from S3 if available (often in XML format for S3 errors)
+                    const s3ErrorText = await uploadRes.text();
+                    console.error('S3 Upload Error Response:', s3ErrorText);
+                    throw new Error(`Upload failed: ${uploadRes.statusText}. S3 Response: ${s3ErrorText.substring(0, 200)}...`);
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                uploadStatus.textContent = `Error: ${error.message}`;
+                alert(`Upload error: ${error.message}`);
+            }
+        }
+
+        async function fetchPdfList() {
+            const fileList = document.getElementById('fileList');
+            const listStatus = document.getElementById('listStatus');
+            fileList.innerHTML = ''; // Clear current list
+            listStatus.textContent = 'Fetching PDF list...';
+
+            try {
+                 // Añadimos un timestamp para evitar problemas de caché del navegador
+                const listPdfsEndpoint = `${LIST_PDFS_API}?t=${new Date().getTime()}`;
+                const res = await fetch(listPdfsEndpoint);
+
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({ message: 'Failed to parse error response from list-pdfs endpoint.' }));
+                    throw new Error(`Failed to fetch PDF list: ${errorData.message || res.statusText}`);
+                }
+                const { files } = await res.json();
+
+                if (files && files.length > 0) {
+                    files.forEach(file => {
+                        const listItem = document.createElement('li');
+                        listItem.textContent = `Key: ${file.key}, Size: ${(file.size / 1024).toFixed(2)} KB, Last Modified: ${new Date(file.lastModified).toLocaleString()}`;
+                        fileList.appendChild(listItem);
+                    });
+                    listStatus.textContent = `${files.length} file(s) found.`;
+                } else {
+                    listStatus.textContent = 'No PDF files found.';
+                }
+            } catch (error) {
+                console.error('Error fetching PDF list:', error);
+                listStatus.textContent = `Error: ${error.message}`;
+                alert(`Error fetching PDF list: ${error.message}`);
+            }
+        }
+
+        // Fetch list on page load
+        document.addEventListener('DOMContentLoaded', fetchPdfList);
+    </script>
+</body>
+</html>
